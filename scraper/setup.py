@@ -8,12 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 try:
-    conn = psycopg2.connect(
-        host="localhost",
-        port=5432,
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-    )
+    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
     conn.autocommit = True
     cur = conn.cursor()
 except psycopg2.Error as e:
@@ -28,13 +23,7 @@ except psycopg2.Error as e:
 cur.close()
 conn.close()
 
-conn = psycopg2.connect(
-    dbname="sjsu_eats",
-    host="localhost",
-    port=5432,
-    user=os.getenv("DB_USER"),
-    password=os.getenv("DB_PASSWORD"),
-)
+conn = psycopg2.connect(conn = psycopg2.connect(os.getenv("DATABASE_URL")))
 cur = conn.cursor()
 
 cur.execute("""

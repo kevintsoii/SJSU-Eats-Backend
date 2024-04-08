@@ -12,13 +12,7 @@ API_URL = "https://customsearch.googleapis.com/customsearch/v1?key=%s&cx=%s&sear
 
 load_dotenv()
 
-conn = psycopg2.connect(
-    dbname="sjsu_eats",
-    host="localhost",
-    port=5432,
-    user=os.getenv("DB_USER"),
-    password=os.getenv("DB_PASSWORD"),
-)
+conn = psycopg2.connect(os.getenv("DATABASE_URL"))
 conn.autocommit = True
 cur = conn.cursor(cursor_factory=extras.RealDictCursor)
 

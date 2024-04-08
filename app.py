@@ -19,13 +19,7 @@ CORS(app)
 
 currently_scraping = set()
 
-conn = psycopg2.connect(
-    dbname="sjsu_eats",
-    host="localhost",
-    port=5432,
-    user=os.getenv("DB_USER"),
-    password=os.getenv("DB_PASSWORD"),
-)
+conn = psycopg2.connect(os.getenv("DATABASE_URL"))
 conn.autocommit = True
 
 
