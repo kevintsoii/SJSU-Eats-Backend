@@ -108,7 +108,7 @@ def scrape_menus(date: str) -> bool:
 
 
 def main():
-    current_date = datetime(2024, 1, 20)
+    current_date = datetime(2024, 3, 20)
     end_date = datetime(2024, 5, 31)
     
     while current_date < end_date:

@@ -48,7 +48,7 @@ def scrape_image(item_name: str, offset: bool=False) -> str:
         return ""
     
     image_name = hashlib.md5(item_name.encode()).hexdigest() + ".jpg"
-    with open(f"src/assets/images/{image_name}", "wb") as image_file:
+    with open(f"scraper/output/{image_name}", "wb") as image_file:
         image_file.write(image_data)
     print(f"Image saved: {image_name}.")
     cur.execute("UPDATE items SET image = %s, image_source = %s WHERE name = %s;", (image_name, image_link, item_name))
