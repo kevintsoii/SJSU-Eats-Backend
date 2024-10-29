@@ -7,8 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/valyala/fasthttp"
+
+	"github.com/kevintsoii/SJSU-Eats-Backend/internal/db"
 )
 
 const (
@@ -94,12 +95,10 @@ func Scrape(date string) error {
 }
 
 func Save(response *Response, date string, meal string) error {
-	err := godotenv.Load(".env")
-	if err != nil {
-		log.Fatal("Error loading .env file")
-		return nil
+	conn := db.GetDB()
+	if conn == nil {
+		return fmt.Errorf("database connection is nil")
 	}
-	// *********** IMPLEMENT DATABASE***********
 
 	data := *response
 	if data.Closed {

@@ -5,7 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kevintsoii/SJSU-Eats-Backend/scraper"
+	"github.com/kevintsoii/SJSU-Eats-Backend/internal/db"
+	"github.com/kevintsoii/SJSU-Eats-Backend/internal/scraper"
 )
 
 type Task struct {
@@ -25,6 +26,12 @@ func worker(tasks <-chan Task, wg *sync.WaitGroup) {
 }
 
 func main() {
+	err := db.Init()
+	if err != nil {
+		log.Fatalf("Error initializing database: %v", err)
+	}
+	defer db.Close()
+
 	var wg sync.WaitGroup
 	tasks := make(chan Task, 5)
 
