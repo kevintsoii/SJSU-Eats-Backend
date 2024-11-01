@@ -1,58 +1,35 @@
 package db
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
+	"log"
 	"os"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/data/azcosmos"
 	"github.com/joho/godotenv"
-	_ "github.com/microsoft/go-mssqldb"
 )
 
-var db *sql.DB
+var db *azcosmos.DatabaseClient
 
-func createTables() error {
-	statements := []string{
-		`IF OBJECT_ID('dbo.Menus', 'U') IS NULL
-		BEGIN 
-			CREATE TABLE dbo.Menus (
-				id INT PRIMARY KEY IDENTITY(1,1),
-				date DATE,
-				meal VARCHAR(10) CHECK (meal IN ('breakfast', 'lunch', 'dinner')),
-				location VARCHAR(64),
-				CONSTRAINT UQ_Meals UNIQUE (date, meal, location)
-			);
-		END;`,
-		`IF OBJECT_ID('dbo.Items', 'U') IS NULL
-		BEGIN
-			CREATE TABLE dbo.Items (
-				name VARCHAR(64) PRIMARY KEY,
-				description VARCHAR(256),
-				portion VARCHAR(64),
-				ingredients VARCHAR(256),
-				nutrients NVARCHAR(MAX),
-				filters NVARCHAR(MAX),
-				image_url NVARCHAR(2083),
-				image_source NVARCHAR(2083)
-			);
-		END;`,
-		`IF OBJECT_ID('dbo.MenuItems', 'U') IS NULL
-		BEGIN
-			CREATE TABLE dbo.MenuItems (
-				menu_id INT,
-				item_name VARCHAR(64),
-				FOREIGN KEY (menu_id) REFERENCES dbo.Menus(id),
-				FOREIGN KEY (item_name) REFERENCES dbo.Items(name),
-				PRIMARY KEY (menu_id, item_name)
-			);
-		END;`,
+func createContainer(container string, partitionKeyPath []string, thoroughput int32, ttl int32) error {
+	ctx := context.Background()
+	containerProperties := azcosmos.ContainerProperties{
+		ID: container,
+		PartitionKeyDefinition: azcosmos.PartitionKeyDefinition{
+			Paths: partitionKeyPath,
+		},
+		DefaultTimeToLive: &ttl,
 	}
+	throughputProperties := azcosmos.NewManualThroughputProperties(thoroughput)
 
-	for _, statement := range statements {
-		_, err := db.Exec(statement)
-		if err != nil {
-			return fmt.Errorf("error executing statement %q: %v", statement, err)
+	_, err := db.CreateContainer(ctx, containerProperties, &azcosmos.CreateContainerOptions{ThroughputProperties: &throughputProperties})
+	if err != nil {
+		if azErr, ok := err.(*azcore.ResponseError); ok && azErr.StatusCode == 409 {
+			return nil
 		}
+		return fmt.Errorf("error creating container: %v", err)
 	}
 	return nil
 }
@@ -63,25 +40,41 @@ func Init() error {
 		return fmt.Errorf("error loading .env: %v", err)
 	}
 
-	connString := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%d;database=%s;",
-		os.Getenv("DB_SERVER"), os.Getenv("DB_USER"), os.Getenv("DB_PASS"), 1433, os.Getenv("DB_NAME"))
-
-	db, err = sql.Open("sqlserver", connString)
+	cred, err := azcosmos.NewKeyCredential(os.Getenv("DB_KEY"))
 	if err != nil {
-		return fmt.Errorf("error loading .env: %v", err.Error())
+		return fmt.Errorf("error creating Cosmos DB key credential: %v", err)
 	}
 
-	if err := createTables(); err != nil {
-		return fmt.Errorf("error creating tables: %v", err)
+	client, err := azcosmos.NewClientWithKey(os.Getenv("DB_URI"), cred, nil)
+	if err != nil {
+		return fmt.Errorf("error creating Cosmos DB client: %v", err)
 	}
 
-	return db.Ping()
+	// Create Database if not exists
+	ctx := context.Background()
+	databaseProperties := azcosmos.DatabaseProperties{ID: "sjsu-eats"}
+	_, _ = client.CreateDatabase(ctx, databaseProperties, nil)
+
+	db, err = client.NewDatabase("sjsu-eats")
+	if err != nil {
+		return fmt.Errorf("error grabbing Cosmos DB database: %v", err)
+	}
+
+	// Create Containers if not exists
+	err = createContainer("menus", []string{"/datemeal"}, 400, 60*60*24*30)
+	if err != nil {
+		return fmt.Errorf("error creating menus container: %v", err)
+	}
+	err = createContainer("items", []string{"/name"}, 600, -1)
+	if err != nil {
+		return fmt.Errorf("error creating items container: %v", err)
+	}
+
+	log.Printf("Successfully initialized database connection")
+
+	return nil
 }
 
-func GetDB() *sql.DB {
+func GetDB() *azcosmos.DatabaseClient {
 	return db
-}
-
-func Close() {
-	db.Close()
 }

@@ -30,7 +30,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error initializing database: %v", err)
 	}
-	defer db.Close()
 
 	var wg sync.WaitGroup
 	tasks := make(chan Task, 5)
