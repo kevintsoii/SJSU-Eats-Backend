@@ -7,8 +7,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 try:
-    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+    conn = psycopg2.connect(os.getenv("DATABASE_URL").replace("/sjsu_eats", "/postgres"))
     conn.autocommit = True
     cur = conn.cursor()
 except psycopg2.Error as e:
@@ -23,11 +24,19 @@ except psycopg2.Error as e:
 cur.close()
 conn.close()
 
-conn = psycopg2.connect(conn = psycopg2.connect(os.getenv("DATABASE_URL")))
+
+conn = psycopg2.connect(os.getenv("DATABASE_URL"))
 cur = conn.cursor()
 
+cur.execute("""    
+    DROP TABLE IF EXISTS menu_items CASCADE;
+    DROP TABLE IF EXISTS menus CASCADE;
+    DROP TABLE IF EXISTS items CASCADE;
+    DROP TYPE IF EXISTS menu_status_enum;
+    DROP TYPE IF EXISTS menu_meal_enum;
+""")
+
 cur.execute("""
-    DROP TABLE IF EXISTS items;
     CREATE TABLE items (
         name VARCHAR(64) PRIMARY KEY,
         description VARCHAR(256),
@@ -42,25 +51,32 @@ cur.execute("""
 )
 
 cur.execute("""
-    DROP TABLE IF EXISTS locations CASCADE;
-    CREATE TABLE locations (
-        name VARCHAR(64) PRIMARY KEY,
-        image VARCHAR(256)
+    CREATE TYPE menu_status_enum AS ENUM ('closed', 'open');
+    CREATE TYPE menu_meal_enum AS ENUM ('breakfast', 'lunch', 'dinner');
+    CREATE TABLE menus (
+        id SERIAL PRIMARY KEY,
+        date DATE NOT NULL,
+        meal menu_meal_enum NOT NULL,
+        location VARCHAR(64),
+        status menu_status_enum NOT NULL,
+        UNIQUE NULLS NOT DISTINCT (date, meal, location)
     );
 """
 )
 
 cur.execute("""
-    DROP TABLE IF EXISTS menus CASCADE;
-    CREATE TABLE menus (
-        date DATE,
-        meal VARCHAR(10) NOT NULL,
-        location VARCHAR(64) REFERENCES locations(name),
-        items VARCHAR(64)[],
-        PRIMARY KEY(date, meal, location)
+    CREATE TABLE menu_items (
+        menu_id INT REFERENCES menus(id) ON DELETE CASCADE,
+        item_name VARCHAR(64) REFERENCES items(name) ON DELETE CASCADE,
+        PRIMARY KEY (menu_id, item_name)
     );
 """
 )
+
+cur.execute("""
+    CREATE INDEX idx_menus_date ON menus (date);
+    CREATE INDEX idx_menu_items_date_name ON menu_items (item_name, menu_id);
+""")
 
 conn.commit()
 
