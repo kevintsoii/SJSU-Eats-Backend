@@ -57,6 +57,7 @@ Flask backend for [SJSU Eats](https://github.com/kevintsoii/SJSU-Eats).
    ```
    GOOGLE_IMAGES_CSE_ID=
    GOOGLE_IMAGES_API_KEY=
+   
    ACCESS_KEY_ID=
    SECRET_ACCESS_KEY=
    S3_ENDPOINT=
@@ -75,6 +76,10 @@ Flask backend for [SJSU Eats](https://github.com/kevintsoii/SJSU-Eats).
 Commands to import a database to Heroku.
 
 ```
-pg_dump -Fp --no-acl --no-owner postgresql://postgres:password@localhost:5432/sjsu_eats > mydb.dump
-heroku pg:psql -a sjsu-eats-backend -f mydb.dump
+pg_dump --no-acl --no-owner --format=plain -d postgresql://postgres:password@localhost:5432/sjsu_eats > mydb.sql
+
+heroku pg:reset DATABASE_URL -a sjsu-eats-backend
+heroku pg:psql -a sjsu-eats-backend -f mydb.sql
+
+heroku restart -a sjsu-eats-backend
 ```
