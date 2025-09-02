@@ -24,8 +24,8 @@ PERIOD_API_URL = f"https://{os.getenv('BASE_API_URL')}/locations/5b50c589f3eeb60
 API_URL = f"https://{os.getenv('BASE_API_URL')}/locations/5b50c589f3eeb609b36a87eb/menu?period=%s&date=%s"
 MEAL_TYPES = set(["breakfast", "lunch", "dinner"])
 
-START_DATE = datetime(2025, 9, 1).date()
-END_DATE = datetime(2025, 9, 3).date()
+START_DATE = datetime(2026, 7, 16).date()
+END_DATE = datetime(2026, 7, 17).date()
 
 
 def add_item(item_data: Dict[str, Any]) -> None:
@@ -86,10 +86,14 @@ def add_menu_items(menu_id: int, items: List[str]) -> None:
         print('Error adding menu items:', e)
 
 
-def scrape_menus(date: str) -> bool:
+def scrape_menus(date: str, refresh_menus: bool = False) -> bool:
     """
     Scrapes breakfast, lunch, and dinner menus for a given date.
     Inserts items, locations, and menus into the database.
+    
+    Args:
+        date: Date string in YYYY-MM-DD format
+        refresh_menus: If True, clears existing menu data for the date before scraping
     """
 
     response = requests.get(
@@ -101,6 +105,24 @@ def scrape_menus(date: str) -> bool:
     )
 
     data = response.json()
+    
+    if refresh_menus:
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    DELETE FROM menu_items 
+                    WHERE menu_id IN (
+                        SELECT id FROM menus WHERE date = %s
+                    );
+                """, (date,))
+                
+                cur.execute("DELETE FROM menus WHERE date = %s;", (date,))
+            
+            conn.commit()
+            print(f"Cleared existing menu data for {date}")
+        except Exception as e:
+            conn.rollback()
+            print(f'Error clearing menu data for {date}:', e)
 
     # Closed
     if not data["periods"]:

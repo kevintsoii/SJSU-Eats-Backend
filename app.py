@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import psycopg2
 from psycopg2 import extras
@@ -15,6 +15,9 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
+currently_scraping = set()
+last_obtained_cache = {}
+
 conn = psycopg2.connect(os.getenv("DATABASE_URL"))
 conn.autocommit = True
 
@@ -25,6 +28,17 @@ def is_valid_date(date: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def needs_refresh(date: str) -> bool:
+    if datetime.strptime(date, "%Y-%m-%d").date() < datetime.now().date():
+        return False
+
+    if date not in last_obtained_cache:
+        return True
+    
+    last_fetched = last_obtained_cache[date]
+    return datetime.now() - last_fetched > timedelta(days=12)
 
 @app.route("/api/item/<item_name>")
 def get_item(item_name):
@@ -103,7 +117,16 @@ def get_menus(date):
         "lunch": {},
         "dinner": {}
     }
-    
+
+    if needs_refresh(date) and date not in currently_scraping:
+        currently_scraping.add(date)
+        try:
+            scrape_menus(date, refresh_menus=True)
+            last_obtained_cache[date] = datetime.now()
+        except:
+            pass
+        currently_scraping.remove(date)
+
     with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
         cur.execute("""
             WITH filtered_menus AS (
@@ -139,11 +162,12 @@ def get_menus(date):
             menus[meal][location]["items"].append(row["item_name"])
     
     for meal in menus:
-        if all(
-            "closed" in menus[meal][location] and menus[meal][location]["closed"]
-            for location in menus[meal]
-        ):
-            menus[meal] = {"closed": True}
+        if 'closed' not in menus[meal]:
+            if all(
+                "closed" in menus[meal][location] and menus[meal][location]["closed"]
+                for location in menus[meal]
+            ):
+                menus[meal] = {"closed": True}
 
     return jsonify(menus)
 
