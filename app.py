@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify
 from flask_cors import CORS
 
+from scraper.scraper import scrape_menus
+
 
 load_dotenv()
 
@@ -102,7 +104,6 @@ def get_menus(date):
         "dinner": {}
     }
     
-    # date, meal, location, items
     with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
         cur.execute("""
             WITH filtered_menus AS (
@@ -137,6 +138,13 @@ def get_menus(date):
 
             menus[meal][location]["items"].append(row["item_name"])
     
+    for meal in menus:
+        if all(
+            "closed" in menus[meal][location] and menus[meal][location]["closed"]
+            for location in menus[meal]
+        ):
+            menus[meal] = {"closed": True}
+
     return jsonify(menus)
 
 
