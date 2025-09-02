@@ -16,11 +16,11 @@ from selenium.webdriver.support import expected_conditions as EC
 load_dotenv()
 
 
-API_URL = f"https://{os.getenv('BASE_API_URL')}/v1/location/5b50c589f3eeb609b36a87eb/periods/%s?platform=0&date=%s"
+API_URL = f"https://{os.getenv('BASE_API_URL')}/locations/5b50c589f3eeb609b36a87eb/menu?period=%s&date=%s"
 MEAL_TYPES = {
-    "678e8fc3e45d4306198e211d": "breakfast",
-    "67856c8c351d53052c49b467": "lunch",
-    "6789c260e45d4305db744436": "dinner"
+    "68b686b6bb032e612d4fa1ad": "breakfast",
+    "68b686b6bb032e612d4fa1ab": "lunch",
+    "68b686b6bb032e612d4fa1ac": "dinner"
 }
 
 START_DATE = datetime(2025, 1, 1).date()
