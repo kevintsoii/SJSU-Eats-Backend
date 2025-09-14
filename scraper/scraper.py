@@ -18,8 +18,8 @@ PERIOD_API_URL = f"https://{os.getenv('BASE_API_URL')}/locations/5b50c589f3eeb60
 API_URL = f"https://{os.getenv('BASE_API_URL')}/locations/5b50c589f3eeb609b36a87eb/menu?period=%s&date=%s"
 MEAL_TYPES = set(["breakfast", "lunch", "dinner"])
 
-START_DATE = datetime(2026, 7, 16).date()
-END_DATE = datetime(2026, 7, 17).date()
+START_DATE = datetime(2025, 9, 16).date()
+END_DATE = datetime(2025, 9, 17).date()
 
 
 def add_item(item_data: Dict[str, Any]) -> None:
@@ -133,12 +133,6 @@ def scrape_menus(date: str, refresh_menus: bool = False) -> bool:
     }
     
     for meal_hash, meal_type in meals.items():
-        # driver.get(API_URL % (meal_hash, date))
-        # json_element = WebDriverWait(driver, 10).until(
-        #     EC.presence_of_element_located((By.TAG_NAME, "pre"))
-        # )
-        # data = json.loads(json_element.text)
-
         response = requests.get(
             API_URL % (meal_hash, date),
             headers={
@@ -187,13 +181,6 @@ def main():
 
 
 if __name__ == "__main__":
-    # options = Options()
-    # options.add_argument("--log-level=3")
-    # options.add_argument("--disable-gpu")
-    # options.add_argument("--no-sandbox")
-    # driver = webdriver.Chrome(options=options)
-
     main()
 
     conn.close()
-    # driver.quit()
