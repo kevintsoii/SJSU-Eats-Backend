@@ -1,5 +1,7 @@
 import os
-from datetime import datetime, timedelta
+import threading
+import time
+from datetime import datetime
 
 import psycopg
 from dotenv import load_dotenv
@@ -15,7 +17,6 @@ app = Flask(__name__)
 CORS(app)
 
 currently_scraping = set()
-last_obtained_cache = {}
 
 conn = psycopg.connect(os.getenv("DATABASE_URL"))
 conn.autocommit = True
@@ -29,15 +30,16 @@ def is_valid_date(date: str) -> bool:
         return False
 
 
-def needs_refresh(date: str) -> bool:
-    if datetime.strptime(date, "%Y-%m-%d").date() < datetime.now().date():
-        return False
+def async_scrape_menus(date: str):
+    """Asynchronously scrape menus for a given date."""
+    print(f"Scraping menus for {date} asynchronously.")
 
-    if date not in last_obtained_cache:
-        return True
-    
-    last_fetched = last_obtained_cache[date]
-    return datetime.now() - last_fetched > timedelta(days=12)
+    try:
+        scrape_menus(date, refresh_menus=True)
+    except Exception as e:
+        print(f"Error in async scraping for {date}: {e}")
+    finally:
+        currently_scraping.discard(date)
 
 @app.route("/api/item/<item_name>")
 def get_item(item_name):
@@ -103,13 +105,19 @@ def get_search_results(query):
 def get_menus(date):
     """
     Fetches menus for the specified date.
-    If none are found, requests a scrape of today's menus from the API.
+    Implements smart refresh logic:
+    - If menu doesn't exist: scrape synchronously before proceeding
+    - If menu exists but is >3 days old: re-scrape asynchronously
+    - If menu exists and is fresh: proceed normally
 
     Args:
         date (str): YYYY-MM-DD format
     """
     if not is_valid_date(date):
         return jsonify({"error": "Invalid date format."}), 400
+
+    if date in currently_scraping:
+        return jsonify({"error": "Menu data is currently being scraped. Please try again shortly."}), 202
     
     menus = {
         "breakfast": {},
@@ -117,30 +125,65 @@ def get_menus(date):
         "dinner": {}
     }
 
-    if needs_refresh(date) and date not in currently_scraping:
-        currently_scraping.add(date)
-        try:
-            scrape_menus(date, refresh_menus=True)
-            last_obtained_cache[date] = datetime.now()
-        except:
-            pass
-        currently_scraping.remove(date)
-
+    # Check if menus exist and get their last_updated timestamps
     with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
         cur.execute("""
             WITH filtered_menus AS (
-                SELECT id, meal, location, status
+                SELECT id, meal, location, status, last_updated
                 FROM menus
                 WHERE date = %s
             )
             SELECT 
-                fm.meal, fm.location, fm.status, mi.item_name
+                fm.meal, fm.location, fm.status, fm.last_updated, mi.item_name
             FROM filtered_menus fm
             LEFT JOIN menu_items mi ON fm.id = mi.menu_id;
         """, (date,))
 
         rows = cur.fetchall()
 
+    # If no menus exist, scrape synchronously
+    if not rows:
+        if date not in currently_scraping:
+            print(f"Scraping menus for {date} synchronously.")
+            currently_scraping.add(date)
+            try:
+                scrape_menus(date)
+            except Exception as e:
+                currently_scraping.discard(date)
+                return jsonify({"error": f"Failed to scrape menus: {str(e)}"}), 500
+            finally:
+                currently_scraping.discard(date)
+            
+            # Re-fetch the data after scraping
+            with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
+                cur.execute("""
+                    WITH filtered_menus AS (
+                        SELECT id, meal, location, status, last_updated
+                        FROM menus
+                        WHERE date = %s
+                    )
+                    SELECT 
+                        fm.meal, fm.location, fm.status, fm.last_updated, mi.item_name
+                    FROM filtered_menus fm
+                    LEFT JOIN menu_items mi ON fm.id = mi.menu_id;
+                """, (date,))
+                rows = cur.fetchall()
+        else:
+            return jsonify({"error": "Menu data is currently being scraped. Please try again shortly."}), 202
+
+    # Check if any menu data is older than 48 hours and trigger async refresh
+    if rows and date not in currently_scraping:
+        current_time = time.time()
+        oldest_update = min(row["last_updated"] for row in rows if row["last_updated"])
+        
+        if current_time - oldest_update > 259200:
+            currently_scraping.add(date)
+            # Start async scraping in background thread
+            thread = threading.Thread(target=async_scrape_menus, args=(date,))
+            thread.daemon = True
+            thread.start()
+
+    # Process the menu data
     if not rows:
         return jsonify({"error": "No menus found for this date."})
 

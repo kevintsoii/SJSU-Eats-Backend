@@ -70,7 +70,8 @@ def add_menu_items(menu_id: int, items: List[str]) -> None:
     try:
         with conn.cursor() as cur:
             cur.executemany(
-                "INSERT INTO menu_items VALUES (%s, %s);",
+                """INSERT INTO menu_items VALUES (%s, %s)
+                   ON CONFLICT (menu_id, item_name) DO NOTHING;""",
                 [(menu_id, item) for item in items]
             )
 
@@ -101,6 +102,9 @@ def scrape_menus(date: str, refresh_menus: bool = False) -> bool:
     data = response.json()
     
     if refresh_menus:
+        if "periods" not in data:
+            raise Exception(f"No periods found for {date}")
+
         try:
             with conn.cursor() as cur:
                 cur.execute("""
