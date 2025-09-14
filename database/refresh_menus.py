@@ -1,13 +1,13 @@
 import os
 
-import psycopg2
+import psycopg
 from dotenv import load_dotenv
 
 
 load_dotenv()
 
 
-conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+conn = psycopg.connect(os.getenv("DATABASE_URL"))
 cur = conn.cursor()
 
 cur.execute("""

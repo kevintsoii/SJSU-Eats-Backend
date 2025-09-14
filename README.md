@@ -4,8 +4,9 @@ Flask backend for [SJSU Eats](https://github.com/kevintsoii/SJSU-Eats).
 
 ## Prerequisites
 
-- [Python](https://www.python.org/) 3+
+- [Python](https://www.python.org/) 3.10+
 - [PostgreSQL](https://www.postgresql.org/download/) 16
+- Docker
 
 ## Getting Started
 
@@ -27,6 +28,11 @@ Flask backend for [SJSU Eats](https://github.com/kevintsoii/SJSU-Eats).
 
    ```
    pip install -r requirements.txt
+
+   docker run --name postgres \
+      -e POSTGRES_PASSWORD=password \
+      -p 5432:5432 \
+      -d postgres
    ```
 
 4. Set up the Postgres database and run the Flask app

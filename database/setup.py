@@ -1,7 +1,7 @@
 import os
 import sys
 
-import psycopg2
+import psycopg
 from dotenv import load_dotenv
 
 
@@ -9,15 +9,15 @@ load_dotenv()
 
 
 try:
-    conn = psycopg2.connect(os.getenv("DATABASE_URL").replace("/sjsu_eats", "/postgres"))
+    conn = psycopg.connect(os.getenv("DATABASE_URL").replace("/sjsu_eats", "/postgres"))
     conn.autocommit = True
     cur = conn.cursor()
-except psycopg2.Error as e:
+except psycopg.Error as e:
     sys.exit(f"Failed to connect to PostgreSQL: {e}")
 
 try:
     cur.execute(f"CREATE DATABASE sjsu_eats;")
-except psycopg2.Error as e:
+except psycopg.Error as e:
     input("Warning: The database already exists.\n"
           "Press enter to continue (old data will be lost): ")
 
@@ -25,7 +25,7 @@ cur.close()
 conn.close()
 
 
-conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+conn = psycopg.connect(os.getenv("DATABASE_URL"))
 cur = conn.cursor()
 
 cur.execute("""    

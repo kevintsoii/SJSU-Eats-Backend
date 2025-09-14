@@ -1,6 +1,6 @@
 import json
 import os
-import psycopg2
+import psycopg
 import requests
 import time
 
@@ -8,16 +8,10 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from typing import Dict, Any, List
 
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-
 
 load_dotenv()
 
-conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+conn = psycopg.connect(os.getenv("DATABASE_URL"))
 
 
 PERIOD_API_URL = f"https://{os.getenv('BASE_API_URL')}/locations/5b50c589f3eeb609b36a87eb/periods/?date=%s"
@@ -50,7 +44,7 @@ def add_item(item_data: Dict[str, Any]) -> None:
             )
 
         conn.commit()
-    except psycopg2.IntegrityError:
+    except psycopg.IntegrityError:
         conn.rollback()
     except Exception as e:
         conn.rollback()

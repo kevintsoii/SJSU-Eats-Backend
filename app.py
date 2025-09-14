@@ -1,8 +1,7 @@
 import os
 from datetime import datetime, timedelta
 
-import psycopg2
-from psycopg2 import extras
+import psycopg
 from dotenv import load_dotenv
 from flask import Flask, jsonify
 from flask_cors import CORS
@@ -18,7 +17,7 @@ CORS(app)
 currently_scraping = set()
 last_obtained_cache = {}
 
-conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+conn = psycopg.connect(os.getenv("DATABASE_URL"))
 conn.autocommit = True
 
 
@@ -45,7 +44,7 @@ def get_item(item_name):
     """
     Fetches all basic item info from the database.
     """
-    with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+    with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
         cur.execute("SELECT * FROM items WHERE name = %s;", (item_name,))
         item = cur.fetchone()  # Fetch a single item
         
@@ -59,7 +58,7 @@ def get_items():
     """
     Fetches all basic item info from the database.
     """
-    with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+    with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
         cur.execute("SELECT i.name, i.nutrients, i.image FROM items i;")
         rows = cur.fetchall()
 
@@ -82,7 +81,7 @@ def get_search_results(query):
     if len(query) < 3 or len(query) > 50:
         return jsonify({"error": "Invalid search query"}), 400
     
-    with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+    with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
         cur.execute("""
             SELECT m.date, mi.item_name
             FROM menus m JOIN menu_items mi ON m.id = mi.menu_id
@@ -127,7 +126,7 @@ def get_menus(date):
             pass
         currently_scraping.remove(date)
 
-    with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+    with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
         cur.execute("""
             WITH filtered_menus AS (
                 SELECT id, meal, location, status

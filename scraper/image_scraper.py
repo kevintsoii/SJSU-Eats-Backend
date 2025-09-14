@@ -3,9 +3,8 @@ import hashlib
 from io import BytesIO
 
 import boto3
-import psycopg2
+import psycopg
 import requests
-from psycopg2 import extras
 from dotenv import load_dotenv
 
 
@@ -24,9 +23,9 @@ s3_client = boto3.client(
     aws_secret_access_key=os.getenv("SECRET_ACCESS_KEY")
 )
 
-conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+conn = psycopg.connect(os.getenv("DATABASE_URL"))
 conn.autocommit = True
-cur = conn.cursor(cursor_factory=extras.RealDictCursor)
+cur = conn.cursor(row_factory=psycopg.rows.dict_row)
 
 
 def scrape_image(item_name: str, offset: bool=False) -> str:
