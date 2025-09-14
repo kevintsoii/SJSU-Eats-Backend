@@ -11,8 +11,6 @@ from typing import Dict, Any, List
 
 load_dotenv()
 
-conn = psycopg.connect(os.getenv("DATABASE_URL"))
-
 
 PERIOD_API_URL = f"https://{os.getenv('BASE_API_URL')}/locations/5b50c589f3eeb609b36a87eb/periods/?date=%s"
 API_URL = f"https://{os.getenv('BASE_API_URL')}/locations/5b50c589f3eeb609b36a87eb/menu?period=%s&date=%s"
@@ -34,51 +32,49 @@ def add_item(item_data: Dict[str, Any]) -> None:
     ]
 
     try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO items VALUES (%s, %s, %s, %s, %s, %s);",
-                (item_data["name"],
-                 item_data["desc"].strip() if item_data["desc"] is not None else None,
-                 item_data["portion"].strip() if item_data["portion"] is not None else None,
-                 item_data["ingredients"].strip().replace("^", ""), json.dumps(nutrients), json.dumps(filters))
-            )
-
-        conn.commit()
+        with psycopg.connect(os.getenv("DATABASE_URL")) as item_conn:
+            with item_conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO items VALUES (%s, %s, %s, %s, %s, %s);",
+                    (item_data["name"],
+                     item_data["desc"].strip() if item_data["desc"] is not None else None,
+                     item_data["portion"].strip() if item_data["portion"] is not None else None,
+                     item_data["ingredients"].strip().replace("^", ""), json.dumps(nutrients), json.dumps(filters))
+                )
+            item_conn.commit()
     except psycopg.IntegrityError:
-        conn.rollback()
+        # Item already exists, that's fine
+        pass
     except Exception as e:
-        conn.rollback()
-        print('Error adding item:', e)
+        print(f'Error adding item {item_data["name"]}: {e}')
 
 def add_menu(date: str, meal: str, location: str, status: str) -> int:
     try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO menus (date, meal, location, status) VALUES (%s, %s, %s, %s) RETURNING ID;",
-                (date, meal, location, status)
-            )
-            value = cur.fetchone()[0]
-    
-        conn.commit()
-        return value
+        with psycopg.connect(os.getenv("DATABASE_URL")) as menu_conn:
+            with menu_conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO menus (date, meal, location, status) VALUES (%s, %s, %s, %s) RETURNING ID;",
+                    (date, meal, location, status)
+                )
+                value = cur.fetchone()[0]
+            menu_conn.commit()
+            return value
     except Exception as e:
-        conn.rollback()
-        print('Error adding menu:', e)
+        print(f'Error adding menu {date} {meal} {location}: {e}')
         return None
 
 def add_menu_items(menu_id: int, items: List[str]) -> None:
     try:
-        with conn.cursor() as cur:
-            cur.executemany(
-                """INSERT INTO menu_items VALUES (%s, %s)
-                   ON CONFLICT (menu_id, item_name) DO NOTHING;""",
-                [(menu_id, item) for item in items]
-            )
-
-        conn.commit()
+        with psycopg.connect(os.getenv("DATABASE_URL")) as items_conn:
+            with items_conn.cursor() as cur:
+                cur.executemany(
+                    """INSERT INTO menu_items VALUES (%s, %s)
+                       ON CONFLICT (menu_id, item_name) DO NOTHING;""",
+                    [(menu_id, item) for item in items]
+                )
+            items_conn.commit()
     except Exception as e:
-        conn.rollback()
-        print('Error adding menu items:', e)
+        print(f'Error adding menu items for menu_id {menu_id}: {e}')
 
 
 def scrape_menus(date: str, refresh_menus: bool = False) -> bool:
@@ -106,20 +102,19 @@ def scrape_menus(date: str, refresh_menus: bool = False) -> bool:
             raise Exception(f"No periods found for {date}")
 
         try:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    DELETE FROM menu_items 
-                    WHERE menu_id IN (
-                        SELECT id FROM menus WHERE date = %s
-                    );
-                """, (date,))
-                
-                cur.execute("DELETE FROM menus WHERE date = %s;", (date,))
-            
-            conn.commit()
-            print(f"Cleared existing menu data for {date}")
+            with psycopg.connect(os.getenv("DATABASE_URL")) as refresh_conn:
+                with refresh_conn.cursor() as cur:
+                    cur.execute("""
+                        DELETE FROM menu_items 
+                        WHERE menu_id IN (
+                            SELECT id FROM menus WHERE date = %s
+                        );
+                    """, (date,))
+                    
+                    cur.execute("DELETE FROM menus WHERE date = %s;", (date,))
+                refresh_conn.commit()
+                print(f"Cleared existing menu data for {date}")
         except Exception as e:
-            conn.rollback()
             print(f'Error clearing menu data for {date}:', e)
 
     # Closed
@@ -161,18 +156,18 @@ def scrape_menus(date: str, refresh_menus: bool = False) -> bool:
             print(f"Added menu for {date} {meal_type} {location_data['name']}")
 
 def main():
-    with conn.cursor() as cur:
-        cur.execute("""
-            DELETE FROM menus
-            WHERE date = (SELECT MAX(date) FROM menus);
-        """)
+    with psycopg.connect(os.getenv("DATABASE_URL")) as main_conn:
+        with main_conn.cursor() as cur:
+            cur.execute("""
+                DELETE FROM menus
+                WHERE date = (SELECT MAX(date) FROM menus);
+            """)
 
-        cur.execute("""
-            SELECT DISTINCT date FROM menus;
-        """)
-        scraped_dates = {row[0] for row in cur.fetchall()}
-
-    conn.commit()
+            cur.execute("""
+                SELECT DISTINCT date FROM menus;
+            """)
+            scraped_dates = {row[0] for row in cur.fetchall()}
+        main_conn.commit()
 
     all_dates = {START_DATE + timedelta(days=i) for i in range((END_DATE - START_DATE).days)}
     missing_dates = sorted(all_dates - scraped_dates)
@@ -186,5 +181,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-    conn.close()

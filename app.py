@@ -2,6 +2,7 @@ import os
 import threading
 import time
 from datetime import datetime
+from queue import Queue
 
 import psycopg
 from dotenv import load_dotenv
@@ -14,9 +15,13 @@ from scraper.scraper import scrape_menus
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins="*", allow_headers="*", methods="*")
 
+# Queue system for scraping requests
+scrape_queue = Queue()
+queued_dates = set()  # Track what's in queue to avoid duplicates
 currently_scraping = set()
+queue_processor_running = False
 
 conn = psycopg.connect(os.getenv("DATABASE_URL"))
 conn.autocommit = True
@@ -30,16 +35,54 @@ def is_valid_date(date: str) -> bool:
         return False
 
 
-def async_scrape_menus(date: str):
-    """Asynchronously scrape menus for a given date."""
-    print(f"Scraping menus for {date} asynchronously.")
+def process_scrape_queue():
+    """Background thread function to process scraping queue sequentially."""
+    global queue_processor_running
+    
+    while True:
+        try:
+            # Get next item from queue (this blocks until an item is available)
+            date, refresh_menus = scrape_queue.get(timeout=30)  # 30 second timeout
+            
+            print(f"[QUEUE] Processing scrape request for {date} (refresh={refresh_menus})")
+            
+            # Move from queued to currently_scraping
+            queued_dates.discard(date)
+            currently_scraping.add(date)
+            
+            try:
+                scrape_menus(date, refresh_menus=refresh_menus)
+                print(f"[QUEUE] Successfully scraped {date}")
+            except Exception as e:
+                print(f"[QUEUE] Error scraping {date}: {e}")
+            finally:
+                currently_scraping.discard(date)
+                scrape_queue.task_done()
+                
+        except:
+            # Queue timeout or other error - this is normal when no items in queue
+            continue
 
-    try:
-        scrape_menus(date, refresh_menus=True)
-    except Exception as e:
-        print(f"Error in async scraping for {date}: {e}")
-    finally:
-        currently_scraping.discard(date)
+
+def add_to_scrape_queue(date: str, refresh_menus: bool = False):
+    """Add a date to the scraping queue if not already queued or being processed."""
+    if date in queued_dates or date in currently_scraping:
+        print(f"[QUEUE] {date} already queued or being processed")
+        return False
+    
+    queued_dates.add(date)
+    scrape_queue.put((date, refresh_menus))
+    print(f"[QUEUE] Added {date} to scrape queue (refresh={refresh_menus})")
+    
+    # Start queue processor if not running
+    global queue_processor_running
+    if not queue_processor_running:
+        queue_processor_running = True
+        thread = threading.Thread(target=process_scrape_queue, daemon=True)
+        thread.start()
+        print("[QUEUE] Started queue processor thread")
+    
+    return True
 
 @app.route("/api/item/<item_name>")
 def get_item(item_name):
@@ -116,7 +159,8 @@ def get_menus(date):
     if not is_valid_date(date):
         return jsonify({"error": "Invalid date format."}), 400
 
-    if date in currently_scraping:
+    # Check if date is queued or currently being scraped
+    if date in queued_dates or date in currently_scraping:
         return jsonify({"error": "Menu data is currently being scraped. Please try again shortly."}), 202
     
     menus = {
@@ -141,47 +185,18 @@ def get_menus(date):
 
         rows = cur.fetchall()
 
-    # If no menus exist, scrape synchronously
+    # If no menus exist, add to queue and return 202
     if not rows:
-        if date not in currently_scraping:
-            print(f"Scraping menus for {date} synchronously.")
-            currently_scraping.add(date)
-            try:
-                scrape_menus(date)
-            except Exception as e:
-                currently_scraping.discard(date)
-                return jsonify({"error": f"Failed to scrape menus: {str(e)}"}), 500
-            finally:
-                currently_scraping.discard(date)
-            
-            # Re-fetch the data after scraping
-            with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
-                cur.execute("""
-                    WITH filtered_menus AS (
-                        SELECT id, meal, location, status, last_updated
-                        FROM menus
-                        WHERE date = %s
-                    )
-                    SELECT 
-                        fm.meal, fm.location, fm.status, fm.last_updated, mi.item_name
-                    FROM filtered_menus fm
-                    LEFT JOIN menu_items mi ON fm.id = mi.menu_id;
-                """, (date,))
-                rows = cur.fetchall()
-        else:
-            return jsonify({"error": "Menu data is currently being scraped. Please try again shortly."}), 202
+        add_to_scrape_queue(date, refresh_menus=False)
+        return jsonify({"error": "Menu data is being scraped. Please try again shortly."}), 202
 
-    # Check if any menu data is older than 48 hours and trigger async refresh
-    if rows and date not in currently_scraping:
+    # Check if any menu data is older than 72 hours and trigger async refresh
+    if rows and date not in currently_scraping and date not in queued_dates:
         current_time = time.time()
         oldest_update = min(row["last_updated"] for row in rows if row["last_updated"])
         
-        if current_time - oldest_update > 259200:
-            currently_scraping.add(date)
-            # Start async scraping in background thread
-            thread = threading.Thread(target=async_scrape_menus, args=(date,))
-            thread.daemon = True
-            thread.start()
+        if current_time - oldest_update > 259200:  # 72 hours
+            add_to_scrape_queue(date, refresh_menus=True)
 
     # Process the menu data
     if not rows:
